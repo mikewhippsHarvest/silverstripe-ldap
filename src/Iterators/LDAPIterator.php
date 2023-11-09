@@ -50,7 +50,7 @@ final class LDAPIterator implements Iterator
      * @param string|null $baseDn The Base DN to search from (or null to search from the connection root)
      * @param array|null $returnAttributes The attributes to request from the LDAP server, or null to request all
      * @param int $pageSize Number of results per page. This *must* be less than the LDAP server MaxPageSize setting
-     * @param bool $resolveRangedAttributes Whether or not to return ranged attributes
+     * @param bool $resolveRangedAttributes Whether to return ranged attributes
      */
     public function __construct(Ldap $ldap, $filter = "", $baseDn = null, array $returnAttributes = null, $pageSize = 250, $resolveRangedAttributes = false)
     {
@@ -114,28 +114,40 @@ final class LDAPIterator implements Iterator
             $baseDn = $ldap->getBaseDn();
         }
 
-        ldap_control_paged_result($resource, $this->getPageSize(), true, $this->cookie);
+        #ldap_control_paged_result($resource, $this->getPageSize(), true, $this->cookie);
+
+        $ldapControls = [
+            [
+                'oid' => LDAP_CONTROL_PAGEDRESULTS,
+                'value' => ['size' => 2, 'cookie' => $this->cookie]
+            ]
+        ];
+
         if ($this->getReturnAttributes() !== null) {
             $resultResource = ldap_search($resource, $baseDn ?? '', $this->getFilter() ?? '', $this->getReturnAttributes() ?? []);
         } else {
             $resultResource = ldap_search($resource, $baseDn ?? '', $this->getFilter() ?? '');
         }
-        if (! is_resource($resultResource)) {
-            throw new \Exception('ldap_search returned a non-resource type value' . ldap_error($resource));
+        if ($resultResource === false) {
+            /*
+             * @TODO better exception msg
+             */
+            throw new \Exception('ldap_search returned something wrong...' . ldap_error($resource));
+        }
+        // Parse the response so that we can get the cookie from $controls
+        ldap_parse_result($resource, $resultResource, $errcode , $matcheddn , $errmsg , $referrals, $controls);
+        if ($errmsg) {
+            throw new LdapException($ldap, 'Entries could not get fetched');
         }
 
         $entries = ldap_get_entries($resource, $resultResource);
-        if ($entries === false) {
-            throw new LdapException($ldap, 'Entries could not get fetched');
-        }
         $entries = $this->getConvertedEntries($entries);
 
-        ErrorHandler::start();
-        $response = ldap_control_paged_result_response($resource, $resultResource, $this->cookie);
-        ErrorHandler::stop();
-
-        if ($response !== true) {
-            throw new LdapException($ldap, 'Paged result was empty');
+        if (isset($controls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'])) {
+            // You need to pass the cookie from the last call to the next one
+            $this->cookie = $controls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'];
+        } else {
+            $this->cookie = '';
         }
 
         if ($this->entries === null) {

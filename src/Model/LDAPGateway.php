@@ -14,7 +14,7 @@ use Laminas\Ldap\Exception\LdapException;
 use Laminas\Ldap\Filter\AbstractFilter;
 use Laminas\Ldap\Ldap;
 use Laminas\Stdlib\ErrorHandler;
-use function ldap_control_paged_result;
+# use function ldap_control_paged_result;
 
 /**
  * Class LDAPGateway
@@ -63,7 +63,7 @@ class LDAPGateway
         $results = $this->processSearchResults($records);
 
         // Reset the LDAP pagination control back to the original, otherwise all further LDAP read queries fail
-        ldap_control_paged_result($this->getLdap()->getResource(), 1000);
+        # ldap_control_paged_result($this->getLdap()->getResource(), 1000);
 
         return $results;
     }
